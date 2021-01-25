@@ -10,35 +10,79 @@ use strict;
 use warnings;
 
 use List::AllUtils qw(first firstidx max);
+use String::Pad qw(pad);
 
 use Exporter qw(import);
 our @EXPORT_OK = qw/ generate_table /;
 
 # consts
-sub IDX_SCELL_ORIG_ROWNUM() {0}
-sub IDX_SCELL_ORIG_COLNUM() {1}
-sub IDX_SCELL_ROWSPAN()     {2}
-sub IDX_SCELL_COLSPAN()     {3}
+sub IDX_EXPTABLE_CELL_ORIG_ROWNUM() {0}
+sub IDX_EXPTABLE_CELL_ORIG_COLNUM() {1}
+sub IDX_EXPTABLE_CELL_ROWSPAN()     {2}
+sub IDX_EXPTABLE_CELL_COLSPAN()     {3}
+sub IDX_EXPTABLE_CELL_WIDTH()       {4} # visual width
+sub IDX_EXPTABLE_CELL_HEIGHT()      {5} # visual height
+sub IDX_EXPTABLE_CELL_TEXT()        {6}
+sub IDX_EXPTABLE_CELL_SPANWIDTH()   {7} # total spanned width, only set when colspan>1
+sub IDX_EXPTABLE_CELL_SPANHEIGHT()  {8} # total spanned width, only set when rowspan>1
+
+sub _divide_int_to_n_ints {
+    my ($int, $n) = @_;
+    my $subtot = 0;
+    my $int_subtot = 0;
+    my $prev_int_subtot = 0;
+    my @ints;
+    for (1..$n) {
+        $subtot += $int/$n;
+        $int_subtot = sprintf "%.0f", $subtot;
+        push @ints, $int_subtot - $prev_int_subtot;
+        $prev_int_subtot = $int_subtot;
+    }
+    @ints;
+}
+
+sub _get_cell_lines {
+    my ($cell, $height, $width) = @_;
+
+    my $text = ($cell && defined $cell->[IDX_EXPTABLE_CELL_TEXT]) ?
+        $cell->[IDX_EXPTABLE_CELL_TEXT] : "";
+
+    my @lines;
+    my @datalines = split /\R/, $text;
+    for (1..@datalines) {
+        push @lines, pad($datalines[$_-1], $width, 'right', ' ', 'truncate');
+    }
+    for (@datalines+1 .. $height) {
+        push @lines, " " x $width;
+    }
+    \@lines;
+}
 
 sub generate_table {
+    require Text::NonWideChar::Util;
+
     my %args = @_;
     my $rows = $args{rows} or die "Please specify rows";
     my $cell_styles = $args{cell_styles} // [];
 
-    my $scells = []; # [ [[$orig_rowidx,$orig_,$rowspan,$colspan], ...], [[...], ...], ... ]
-  CONSTRUCT_SCELLS: {
-        # 1. the first step is to construct a 2D array we call "scells", which
-        # is the small boxes/cells we will draw later. a table cell with
-        # colspan=2 will become 2 scells. an m-row x n-column table will become
-        # M-row x N-column scells, where M>=m, N>=n.
+    my $exptable = []; # [ [[$orig_rowidx,$orig_colidx,$rowspan,$colspan,...], ...], [[...], ...], ... ]
+    my $M = 0; # number of rows in the exptable
+    my $N = 0; # number of columns in the exptable
+  CONSTRUCT_EXPTABLE: {
+        # 1. the first step is to construct a 2D array we call "exptable" (short
+        # for expanded table), which is like the original table but with all the
+        # spanning rows/columns split into the smaller boxes so it's easier to
+        # draw later. for example, a table cell with colspan=2 will become 2
+        # exptable cells. an m-row x n-column table will become M-row x N-column
+        # exptable, where M>=m, N>=n.
 
         my $rownum = -1;
         for my $row (@$rows) {
             $rownum++;
             my $colnum = -1;
-            $scells->[$rownum] //= [];
-            my $scell_colnum = firstidx {!defined} @{ $scells->[$rownum] };
-            $scell_colnum = 0 if $scell_colnum == -1;
+            $exptable->[$rownum] //= [];
+            my $exptable_colnum = firstidx {!defined} @{ $exptable->[$rownum] };
+            $exptable_colnum = 0 if $exptable_colnum == -1;
 
             for my $cell (@$row) {
                 $colnum++;
@@ -59,44 +103,88 @@ sub generate_table {
                     $colspan = $el->[2]{colspan} if $el;
                 }
 
-                for my $rs (1..$rowspan) {
-                    for my $cs (1..$colspan) {
-                        if ($rs == 1 && $cs == 1) {
-                            $scells->[$rownum][$scell_colnum][IDX_SCELL_ORIG_ROWNUM] = $rownum;
-                            $scells->[$rownum][$scell_colnum][IDX_SCELL_ORIG_COLNUM] = $colnum;
-                            $scells->[$rownum][$scell_colnum][IDX_SCELL_ROWSPAN]     = $rowspan;
-                            $scells->[$rownum][$scell_colnum][IDX_SCELL_COLSPAN]     = $colspan;
-                            #$scells->[$rownum][$scell_colnum][4]     = $text; # testing
-                        } else {
-                            $scells->[$rownum+$rs-1][$scell_colnum+$cs-1] = [];
+                my @widths;
+                my @heights;
+                for my $ir (1..$rowspan) {
+                    for my $ic (1..$colspan) {
+                        my $exptable_cell;
+                        $exptable->[$rownum+$ir-1][$exptable_colnum+$ic-1] = $exptable_cell = [];
+
+                        if ($ir == 1 && $ic == 1) {
+                            $exptable_cell->[IDX_EXPTABLE_CELL_ORIG_ROWNUM] = $rownum;
+                            $exptable_cell->[IDX_EXPTABLE_CELL_ORIG_COLNUM] = $colnum;
+                            $exptable_cell->[IDX_EXPTABLE_CELL_ROWSPAN]     = $rowspan;
+                            $exptable_cell->[IDX_EXPTABLE_CELL_COLSPAN]     = $colspan;
+                            $exptable_cell->[IDX_EXPTABLE_CELL_TEXT]        = $text;
+                            my $lh = Text::NonWideChar::Util::length_height($text);
+                            @widths  = _divide_int_to_n_ints($lh->[0], $colspan);
+                            @heights = _divide_int_to_n_ints($lh->[1], $rowspan);
+
+                            $exptable_cell->[IDX_EXPTABLE_CELL_SPANWIDTH]  = $lh->[0] if $colspan>1;
+                            $exptable_cell->[IDX_EXPTABLE_CELL_SPANHEIGHT] = $lh->[1] if $rowspan>1;
                         }
-                        #use Data::Dump::Color; dd $scells; say ''; # test
+
+                        $exptable_cell->[IDX_EXPTABLE_CELL_WIDTH]  = $widths[$ic-1];
+                        $exptable_cell->[IDX_EXPTABLE_CELL_HEIGHT] = $heights[$ir-1];
+
+                        #use Data::Dump::Color; dd $exptable_cell; say ''; # debug
                     }
+                    $M = $rownum+$ir if $M < $rownum+$ir;
                 }
 
-                $scell_colnum += $colspan;
-                $scell_colnum++ while defined $scells->[$rownum][$scell_colnum];
+                $exptable_colnum += $colspan;
+                $exptable_colnum++ while defined $exptable->[$rownum][$exptable_colnum];
             } # for a row
+            $N = $exptable_colnum if $N < $exptable_colnum;
         } # for rows
-    } # CONSTRUCT_SCELLS
-    #use Data::Dump::Color; dd $scells; # test
+    } # CONSTRUCT_EXPTABLE
+    use Data::Dump::Color; dd $exptable; # debug
+    print "D: exptable size: $M x $N (HxW)\n"; # debug
 
-  OPTIMIZE_SCELLS: {
+  OPTIMIZE_EXPTABLE: {
         # TODO
 
         # 2. we reduce extraneous columns and rows if there are colspan that are
-        # too many. for example, if all cells in column 1 has colspan=2 (or one
-        # row has colspan=2 and another row has colspan=3), we might as remove 1
-        # column because the extra column span doesn't have any content. same
-        # case for extraneous row spans.
-    } # OPTIMIZE_SCELLS
+        # too many. for example, if all exptable cells in column 1 has colspan=2
+        # (or one row has colspan=2 and another row has colspan=3), we might as
+        # remove 1 column because the extra column span doesn't have any
+        # content. same case for extraneous row spans.
+        1;
+    } # OPTIMIZE_EXPTABLE
 
-  DETERMINE_SIZE_OF_EACH_SCELL_COLUMN_AND_ROW: {
-    } # DETERMINE_SIZE_OF_EACH_SCELL_COLUMN_AND_ROW
+    my $exptable_column_widths = []; # idx=exptable colnum
+    my $exptable_row_heights   = []; # idx=exptable rownum
+  DETERMINE_SIZE_OF_EACH_EXPTABLE_COLUMN_AND_ROW: {
+        # 3. before we draw the exptable, we need to determine the width and
+        # height of each exptable column and row.
+        for my $ir (0..$M-1) {
+            my $exptable_row = $exptable->[$ir];
+            $exptable_row_heights->[$ir] = max(
+                1, map {$_->[IDX_EXPTABLE_CELL_HEIGHT]} @$exptable_row);
+        }
 
-  DRAW_SCELLS: {
-    } # DRAW_SCELLS
+        for my $ic (0..$N-1) {
+            $exptable_column_widths->[$ic] = max(
+                1, map {$exptable->[$_][$ic] ? $exptable->[$_][$ic][IDX_EXPTABLE_CELL_WIDTH] : 0} 0..$M-1);
+        }
+    } # DETERMINE_SIZE_OF_EACH_EXPTABLE_COLUMN_AND_ROW
+    use DD; print "column widths: "; dd $exptable_column_widths; # debug
+    use DD; print "row heights: "; dd $exptable_row_heights; # debug
 
+    my @buf; # each elem is a line of text
+  DRAW_EXPTABLE: {
+        for my $ir (0..$M-1) {
+            for my $ic (0..$N-1) {
+                my $cell = $exptable->[$ir][$ic];
+                my $lines = _get_cell_lines($cell, $exptable_row_heights->[$ir], $exptable_column_widths->[$ic]);
+                for (0..$#{$lines}) {
+                    $buf[$ir+$_] .= $lines->[$_] . ($ic == $M-1 ? " |" : " | ");
+                }
+            }
+        }
+    } # DRAW_EXPTABLE
+
+    join "", map {"$_\n"} @buf;
 }
 
 # Back-compat: 'table' is an alias for 'generate_table', but isn't exported
