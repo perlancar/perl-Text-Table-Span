@@ -23,8 +23,6 @@ sub IDX_EXPTABLE_CELL_COLSPAN()     {3}
 sub IDX_EXPTABLE_CELL_WIDTH()       {4} # visual width
 sub IDX_EXPTABLE_CELL_HEIGHT()      {5} # visual height
 sub IDX_EXPTABLE_CELL_TEXT()        {6}
-sub IDX_EXPTABLE_CELL_SPANWIDTH()   {7} # total spanned width, only set when colspan>1
-sub IDX_EXPTABLE_CELL_SPANHEIGHT()  {8} # total spanned width, only set when rowspan>1
 
 sub _divide_int_to_n_ints {
     my ($int, $n) = @_;
@@ -41,11 +39,20 @@ sub _divide_int_to_n_ints {
     @ints;
 }
 
-sub _get_cell_lines {
-    my ($cell, $height, $width) = @_;
+sub _get_exptable_cell_lines {
+    my ($exptable, $row_heights, $column_widths, $len_between_cols, $y, $x) = @_;
 
-    my $text = ($cell && defined $cell->[IDX_EXPTABLE_CELL_TEXT]) ?
-        $cell->[IDX_EXPTABLE_CELL_TEXT] : "";
+    my $cell = $exptable->[$y][$x];
+    my $text = $cell->[IDX_EXPTABLE_CELL_TEXT];
+    my $height = 0;
+    my $width  = 0;
+    for my $ic (1..$cell->[IDX_EXPTABLE_CELL_COLSPAN]) {
+        $width += $column_widths->[$x+$ic-1];
+        $width += $len_between_cols if $ic > 1;
+    }
+    for my $ir (1..$cell->[IDX_EXPTABLE_CELL_ROWSPAN]) {
+        $height += $row_heights->[$ir];
+    }
 
     my @lines;
     my @datalines = split /\R/, $text;
@@ -59,11 +66,17 @@ sub _get_cell_lines {
 }
 
 sub generate_table {
+    require Module::Load::Util;
     require Text::NonWideChar::Util;
 
     my %args = @_;
     my $rows = $args{rows} or die "Please specify rows";
+    my $bs_name = $args{border_style} // 'ASCII::SingleLineDoubleAfterHeader';
     my $cell_styles = $args{cell_styles} // [];
+
+    my $bs_obj = Module::Load::Util::instantiate_class_with_optional_args({ns_prefix=>"BorderStyle"}, $bs_name);
+
+    my $len_between_cols = length(" " . $bs_obj->get_border_char(3, 1) . " ");
 
     my $exptable = []; # [ [[$orig_rowidx,$orig_colidx,$rowspan,$colspan,...], ...], [[...], ...], ... ]
     my $M = 0; # number of rows in the exptable
@@ -117,11 +130,8 @@ sub generate_table {
                             $exptable_cell->[IDX_EXPTABLE_CELL_COLSPAN]     = $colspan;
                             $exptable_cell->[IDX_EXPTABLE_CELL_TEXT]        = $text;
                             my $lh = Text::NonWideChar::Util::length_height($text);
-                            @widths  = _divide_int_to_n_ints($lh->[0], $colspan);
+                            @widths  = _divide_int_to_n_ints($lh->[0] + ($colspan-1)*$len_between_cols, $colspan);
                             @heights = _divide_int_to_n_ints($lh->[1], $rowspan);
-
-                            $exptable_cell->[IDX_EXPTABLE_CELL_SPANWIDTH]  = $lh->[0] if $colspan>1;
-                            $exptable_cell->[IDX_EXPTABLE_CELL_SPANHEIGHT] = $lh->[1] if $rowspan>1;
                         }
 
                         $exptable_cell->[IDX_EXPTABLE_CELL_WIDTH]  = $widths[$ic-1];
@@ -138,8 +148,8 @@ sub generate_table {
             $N = $exptable_colnum if $N < $exptable_colnum;
         } # for rows
     } # CONSTRUCT_EXPTABLE
-    use Data::Dump::Color; dd $exptable; # debug
-    print "D: exptable size: $M x $N (HxW)\n"; # debug
+    use DD; dd $exptable; # debug
+    #print "D: exptable size: $M x $N (HxW)\n"; # debug
 
   OPTIMIZE_EXPTABLE: {
         # TODO
@@ -171,20 +181,48 @@ sub generate_table {
     use DD; print "column widths: "; dd $exptable_column_widths; # debug
     use DD; print "row heights: "; dd $exptable_row_heights; # debug
 
-    my @buf; # each elem is a line of text
+    # each elem is an arrayref containing characters to render a line of the
+    # table: [$left_border_str, $exptable_cell_content1, $border_between_col,
+    # $exptable_cell_content2, ...]. all will be joined together with "\n" to
+    # form the final rendered table.
+    my @buf;
+
   DRAW_EXPTABLE: {
+        my $y = 0;
         for my $ir (0..$M-1) {
+
+            # draw left border
+            for my $i (1 .. $exptable_row_heights->[$ir]) {
+                $buf[$y+$i-1][0] = $bs_obj->get_border_char(3, 0) . " ";
+            }
+
             for my $ic (0..$N-1) {
                 my $cell = $exptable->[$ir][$ic];
-                my $lines = _get_cell_lines($cell, $exptable_row_heights->[$ir], $exptable_column_widths->[$ic]);
-                for (0..$#{$lines}) {
-                    $buf[$ir+$_] .= $lines->[$_] . ($ic == $M-1 ? " |" : " | ");
+
+                # draw border between data cells
+                for my $i (1 .. $exptable_row_heights->[$ir]) {
+                    next unless defined $cell->[IDX_EXPTABLE_CELL_ORIG_ROWNUM];
+                    $buf[$y+$i-1][$ic*2+2] = $ic == $N-1 ?
+                        " " . $bs_obj->get_border_char(3, 2) :
+                        " " . $bs_obj->get_border_char(3, 1) . " ";
+                }
+
+                # draw cell content
+                if (defined $cell->[IDX_EXPTABLE_CELL_ORIG_ROWNUM]) {
+                    my $lines = _get_exptable_cell_lines(
+                        $exptable, $exptable_row_heights, $exptable_column_widths,
+                        $len_between_cols, $ir, $ic);
+                    for my $i (0..$#{$lines}) {
+                        $buf[$y+$i][$ic*2+1] = $lines->[$i];
+                    }
                 }
             }
+            $y += $exptable_row_heights->[$ir];
         }
     } # DRAW_EXPTABLE
 
-    join "", map {"$_\n"} @buf;
+    use DD; dd \@buf;
+    join "", map {my $linebuf = $_; join("", grep {defined} @$linebuf) . "\n"} @buf;
 }
 
 # Back-compat: 'table' is an alias for 'generate_table', but isn't exported

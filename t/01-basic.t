@@ -54,11 +54,19 @@ print generate_table(
 
 $rows = [
     [{text=>"header1",colspan=>2},"header2","header3"],
-    ["cell0,1","cell1,1",{text=>"cell2,1 +\ncell3,1",colspan=>2}],
-    [],
+    ["cell0,1","cell1,1",{text=>"cell2-3,1L1\ncell2-3,1L2",colspan=>2}],
+    [{text=>"cell0-1,2L1\nL2\nL3",colspan=>2},{text=>"cell2-3,2",colspan=>2}],
+    [{text=>"cell0-3,3",colspan=>4}],
 ];
+
+# | header1           | header2 | header 3 |
+# | cell0,1 | cell1,1 | cell2,1L1          |
+# |         |         | cell2,1L2          |
+
+#use DD; dd $rows;
 print generate_table(
     rows => $rows,
+    #border_style => "Test::Labeled",
     header_row => 1,
 );
 
