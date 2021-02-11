@@ -16,15 +16,20 @@ use Exporter qw(import);
 our @EXPORT_OK = qw/ generate_table /;
 
 # consts
-sub IDX_EXPTABLE_CELL_ORIG_ROWNUM()     {0}
-sub IDX_EXPTABLE_CELL_ORIG_COLNUM()     {1}
-sub IDX_EXPTABLE_CELL_ROWSPAN()         {2}
-sub IDX_EXPTABLE_CELL_COLSPAN()         {3}
-sub IDX_EXPTABLE_CELL_WIDTH()           {4} # visual width
-sub IDX_EXPTABLE_CELL_HEIGHT()          {5} # visual height
-sub IDX_EXPTABLE_CELL_TEXT()            {6}
-sub IDX_EXPTABLE_CELL_PART_OF_ROWSPAN() {7} # bool
-sub IDX_EXPTABLE_CELL_PART_OF_COLSPAN() {8} # bool
+sub IDX_EXPTABLE_CELL_ROWSPAN()         {0} # number of rowspan, only defined for the rowspan head
+sub IDX_EXPTABLE_CELL_COLSPAN()         {1} # number of colspan, only defined for the colspan head
+sub IDX_EXPTABLE_CELL_WIDTH()           {2} # visual width. this does not include the cell padding.
+sub IDX_EXPTABLE_CELL_HEIGHT()          {3} # visual height. this does not include row separator.
+sub IDX_EXPTABLE_CELL_TEXT()            {4} # str.
+
+# whether an exptable cell is the head (1st cell) or tail (the rest) of a
+# rowspan/colspan. these should be macros if possible, for speed.
+sub _exptable_cell_is_rowspan_tail { defined($_[0]) && (!defined($_[0][IDX_EXPTABLE_CELL_ROWSPAN])) }
+sub _exptable_cell_is_colspan_tail { defined($_[0]) && (!defined($_[0][IDX_EXPTABLE_CELL_COLSPAN])) }
+sub _exptable_cell_is_tail         { defined($_[0]) && (!defined($_[0][IDX_EXPTABLE_CELL_ROWSPAN]) || !defined($_[0][IDX_EXPTABLE_CELL_COLSPAN])) }   ## XXX checking only rowspan is sufficient?
+sub _exptable_cell_is_rowspan_head { defined($_[0]) && ( defined($_[0][IDX_EXPTABLE_CELL_ROWSPAN])) }
+sub _exptable_cell_is_colspan_head { defined($_[0]) && ( defined($_[0][IDX_EXPTABLE_CELL_COLSPAN])) }
+sub _exptable_cell_is_head         { defined($_[0]) && ( defined($_[0][IDX_EXPTABLE_CELL_ROWSPAN]) &&  defined($_[0][IDX_EXPTABLE_CELL_COLSPAN])) }   ## XXX checking only rowspan is sufficient?
 
 sub _divide_int_to_n_ints {
     my ($int, $n) = @_;
@@ -43,7 +48,7 @@ sub _divide_int_to_n_ints {
 
 sub _get_exptable_cell_lines {
     my ($exptable, $row_heights, $column_widths,
-        $bottom_borders, $len_between_cols, $y, $x) = @_;
+        $bottom_borders, $intercol_width, $y, $x) = @_;
 
     my $cell = $exptable->[$y][$x];
     my $text = $cell->[IDX_EXPTABLE_CELL_TEXT];
@@ -51,7 +56,7 @@ sub _get_exptable_cell_lines {
     my $width  = 0;
     for my $ic (1..$cell->[IDX_EXPTABLE_CELL_COLSPAN]) {
         $width += $column_widths->[$x+$ic-1];
-        $width += $len_between_cols if $ic > 1;
+        $width += $intercol_width if $ic > 1;
     }
     for my $ir (1..$cell->[IDX_EXPTABLE_CELL_ROWSPAN]) {
         $height += $row_heights->[$y+$ir-1];
@@ -80,7 +85,9 @@ sub generate_table {
 
     my $bs_obj = Module::Load::Util::instantiate_class_with_optional_args({ns_prefix=>"BorderStyle"}, $bs_name);
 
-    my $len_between_cols = length(" " . $bs_obj->get_border_char(3, 1) . " ");
+    # XXX when we allow cell attrs right_border and left_border, this will
+    # become array too like $exptable_bottom_borders.
+    my $intercol_width = length(" " . $bs_obj->get_border_char(3, 1) . " ");
 
     my $exptable = []; # [ [[$orig_rowidx,$orig_colidx,$rowspan,$colspan,...], ...], [[...], ...], ... ]
     my $exptable_bottom_borders = []; # idx=exptable rownum, val=bool
@@ -94,7 +101,13 @@ sub generate_table {
         # exptable cells. an m-row x n-column table will become M-row x N-column
         # exptable, where M>=m, N>=n.
 
-        my $rownum = -1;
+        my $rownum;
+
+        # 1a. first substep: construct exptable and calculate everything except
+        # each exptable cell's width and height, because this will require
+        # information from the previous substeps.
+
+        $rownum = -1;
         for my $row (@$rows) {
             $rownum++;
             my $colnum = -1;
@@ -106,7 +119,7 @@ sub generate_table {
             my $exptable_colnum = firstidx {!defined} @{ $exptable->[$rownum] };
             #say "D:rownum=$rownum, exptable_colnum=$exptable_colnum";
             if ($exptable_colnum == -1) { $exptable_colnum = 0 }
-            $exptable_bottom_borders->[$rownum] = $args{row_separator} ? 1:0;
+            $exptable_bottom_borders->[$rownum] //= $args{row_separator} ? 1:0;
 
             for my $cell (@$row) {
                 $colnum++;
@@ -135,25 +148,19 @@ sub generate_table {
                         $exptable->[$rownum+$ir-1][$exptable_colnum+$ic-1] = $exptable_cell = [];
 
                         if ($ir == 1 && $ic == 1) {
-                            $exptable_cell->[IDX_EXPTABLE_CELL_ORIG_ROWNUM] = $rownum;
-                            $exptable_cell->[IDX_EXPTABLE_CELL_ORIG_COLNUM] = $colnum;
                             $exptable_cell->[IDX_EXPTABLE_CELL_ROWSPAN]     = $rowspan;
                             $exptable_cell->[IDX_EXPTABLE_CELL_COLSPAN]     = $colspan;
                             $exptable_cell->[IDX_EXPTABLE_CELL_TEXT]        = $text;
-                            my $lh = Text::NonWideChar::Util::length_height($text);
-                            #use DDC; say "D:length_heigt(".DDC::dump($text)."): ".DDC::dump($lh);
-                            @widths  = _divide_int_to_n_ints($lh->[0], $colspan);
-                            @heights = _divide_int_to_n_ints($lh->[1], $rowspan);
-                        } else {
-                            $exptable_cell->[IDX_EXPTABLE_CELL_PART_OF_COLSPAN] = 1 if $ic > 1;
-                            $exptable_cell->[IDX_EXPTABLE_CELL_PART_OF_ROWSPAN] = 1 if $ir > 1;
                         }
-
-                        $exptable_cell->[IDX_EXPTABLE_CELL_WIDTH]  = $widths[$ic-1];
-                        $exptable_cell->[IDX_EXPTABLE_CELL_HEIGHT] = $heights[$ir-1];
-
                         #use DDC; dd $exptable; say ''; # debug
                     }
+
+                    my $el;
+                    $el = first {$_->[0] == $rownum+$ir-1 && $_->[1] == 0 && $_->[2]{bottom_border}} @$cell_attrs;
+                    $el->{bottom_border} and $exptable_bottom_borders->[$ir] = 1;
+                    $el = first {$_->[0] == $rownum+$ir-1 && $_->[1] == 0 && $_->[2]{top_border}} @$cell_attrs;
+                    $el->{top_border} && $rownum+$ir-1 > 0 and $exptable_bottom_borders->[$rownum+$ir-2] = 1;
+
                     $M = $rownum+$ir if $M < $rownum+$ir;
                 }
 
@@ -171,13 +178,30 @@ sub generate_table {
             $N = $exptable_colnum if $N < $exptable_colnum;
         } # for rows
 
-        for my $ir (0..$M-1) {
-            my $el;
-            $el = first {$_->[0] == $ir && $_->[1] == 0 && $_->[2]{bottom_border}} @$cell_attrs;
-            $el->{bottom_border} and $exptable_bottom_borders->[$ir] = 1;
-            $el = first {$_->[0] == $ir && $_->[1] == 0 && $_->[2]{top_border}} @$cell_attrs;
-            $el->{top_border} && $ir > 0 and $exptable_bottom_borders->[$ir-1] = 1;
-        }
+        # 1b. calculate the heigth and width of each exptable cell (as required
+        # by the text, or specified width/height when we allow cell attrs width,
+        # height)
+
+        for my $exptable_rownum (0..$M-1) {
+            for my $exptable_colnum (0..$N-1) {
+                my $exptable_cell = $exptable->[$exptable_rownum][$exptable_colnum];
+                next if _exptable_cell_is_tail($exptable_cell);
+                my $rowspan = $exptable_cell->[IDX_EXPTABLE_CELL_ROWSPAN];
+                my $colspan = $exptable_cell->[IDX_EXPTABLE_CELL_COLSPAN];
+                my $lh = Text::NonWideChar::Util::length_height($exptable_cell->[IDX_EXPTABLE_CELL_TEXT]);
+                #use DDC; say "D:length_height[$exptable_rownum,$exptable_colnum] = (".DDC::dump($text)."): ".DDC::dump($lh);
+                my $tot_intercol_widths = ($colspan-1) * $intercol_width;
+                my $tot_interrow_heights = 0; for (1..$rowspan) { $tot_interrow_heights++ if $exptable_bottom_borders->[$exptable_rownum+$_-1] }
+                my @heights = _divide_int_to_n_ints(max(0, $lh->[1] - $tot_interrow_heights), $rowspan);
+                my @widths  = _divide_int_to_n_ints(max(0, $lh->[0] - $tot_intercol_widths ), $colspan);
+                for my $ir (1..$rowspan) {
+                    for my $ic (1..$colspan) {
+                        $exptable->[$exptable_rownum+$ir-1][$exptable_colnum+$ic-1][IDX_EXPTABLE_CELL_HEIGHT]  = $heights[$ir-1];
+                        $exptable->[$exptable_rownum+$ir-1][$exptable_colnum+$ic-1][IDX_EXPTABLE_CELL_WIDTH]   = $widths [$ic-1];
+                    }
+                }
+            }
+        } # for rows
 
     } # CONSTRUCT_EXPTABLE
     #use DDC; dd $exptable; # debug
@@ -199,14 +223,14 @@ sub generate_table {
 
         1;
     } # OPTIMIZE_EXPTABLE
-    use DDC; dd $exptable; # debug
+    #use DDC; dd $exptable; # debug
 
     my $exptable_column_widths  = []; # idx=exptable colnum
     my $exptable_row_heights    = []; # idx=exptable rownum
   DETERMINE_SIZE_OF_EACH_EXPTABLE_COLUMN_AND_ROW: {
         # 3. before we draw the exptable, we need to determine the width and
         # height of each exptable column and row.
-        use DDC;
+        #use DDC;
         for my $ir (0..$M-1) {
             my $exptable_row = $exptable->[$ir];
             $exptable_row_heights->[$ir] = max(
@@ -218,9 +242,9 @@ sub generate_table {
                 1, map {$exptable->[$_][$ic] ? $exptable->[$_][$ic][IDX_EXPTABLE_CELL_WIDTH] : 0} 0..$M-1);
         }
     } # DETERMINE_SIZE_OF_EACH_EXPTABLE_COLUMN_AND_ROW
-    use DDC; print "column widths: "; dd $exptable_column_widths; # debug
-    use DDC; print "row heights: "; dd $exptable_row_heights; # debug
-    use DDC; print "bottom borders: "; dd $exptable_bottom_borders; # debug
+    #use DDC; print "column widths: "; dd $exptable_column_widths; # debug
+    #use DDC; print "row heights: "; dd $exptable_row_heights; # debug
+    #use DDC; print "bottom borders: "; dd $exptable_bottom_borders; # debug
 
     # each elem is an arrayref containing characters to render a line of the
     # table, e.g. for element [0] the row is all borders. for element [1]:
@@ -248,7 +272,7 @@ sub generate_table {
                 $buf[$y][0] = $b_topleft;
                 for my $ic (0..$N-1) {
                     my $cell_right = $ic < $N-1 ? $exptable->[$ir][$ic+1] : undef;
-                    my $cell_right_has_content = defined $cell_right && defined $cell_right->[IDX_EXPTABLE_CELL_ORIG_ROWNUM];
+                    my $cell_right_has_content = defined $cell_right && _exptable_cell_is_head($cell_right);
                     $buf[$y][$ic*4+2] = $bs_obj->get_border_char($b_y, 1, $exptable_column_widths->[$ic]+2); # +1, +2, +3
                     $buf[$y][$ic*4+4] = $ic == $N-1 ? $b_topright : ($cell_right_has_content ? $b_topbetwcol : $b_topline);
                 }
@@ -270,17 +294,17 @@ sub generate_table {
                     # draw border between data cells
                     for my $i (1 .. $exptable_row_heights->[$ir]) {
                         next if $ic == $N-1;
-                        next if $cell->[IDX_EXPTABLE_CELL_PART_OF_COLSPAN];
+                        next if _exptable_cell_is_colspan_tail($cell);
                         $buf[$y+$i-1][$ic*4+1] = " ";
                         $buf[$y+$i-1][$ic*4+2] = $bs_obj->get_border_char($b_y, 1);
                         $buf[$y+$i-1][$ic*4+3] = " ";
                     }
 
                     # draw cell content
-                    if (defined $cell->[IDX_EXPTABLE_CELL_ORIG_ROWNUM]) {
+                    if (_exptable_cell_is_head($cell)) {
                         $lines = _get_exptable_cell_lines(
                             $exptable, $exptable_row_heights, $exptable_column_widths,
-                            $exptable_bottom_borders, $len_between_cols, $ir, $ic);
+                            $exptable_bottom_borders, $intercol_width, $ir, $ic);
                         for my $i (0..$#{$lines}) {
                             $buf[$y+$i][$ic*4+1] = " ";
                             $buf[$y+$i][$ic*4+2] = $lines->[$i];
@@ -291,7 +315,7 @@ sub generate_table {
 
                     # draw right border
                     if ($ic == $N-1) {
-                        if (!$cell->[IDX_EXPTABLE_CELL_PART_OF_COLSPAN]) {
+                        if (_exptable_cell_is_colspan_head($cell)) {
                             my $b_y = $ir == 0 && $args{header_row} ? 1 : 3;
                             for my $i (1 .. $exptable_row_heights->[$ir]) {
                                 $buf[$y+$i-1][$ic*4+3] = " ";
@@ -328,22 +352,14 @@ sub generate_table {
                     my $cell_topright = $ic < $N-1 ? $exptable->[$ir][$ic+1] : undef;
                     my $cell_botleft  = $ir < $M-1 ? $exptable->[$ir+1][$ic] : undef;
                     my $cell_botright = $ir < $M-1 && $ic < $N-1 ? $exptable->[$ir+1][$ic+1] : undef;
-                    my $cell_topleft_part_of_rowspan  = defined $cell_topleft->[IDX_EXPTABLE_CELL_PART_OF_ROWSPAN];
-                    my $cell_topleft_part_of_colspan  = defined $cell_topleft->[IDX_EXPTABLE_CELL_PART_OF_COLSPAN];
-                    my $cell_topright_part_of_rowspan = defined $cell_topright && defined $cell_topright->[IDX_EXPTABLE_CELL_PART_OF_ROWSPAN];
-                    my $cell_topright_part_of_colspan = defined $cell_topright && defined $cell_topright->[IDX_EXPTABLE_CELL_PART_OF_COLSPAN];
-                    my $cell_botleft_part_of_rowspan  = defined $cell_botleft  && defined $cell_botleft ->[IDX_EXPTABLE_CELL_PART_OF_ROWSPAN];
-                    my $cell_botleft_part_of_colspan  = defined $cell_botleft  && defined $cell_botleft ->[IDX_EXPTABLE_CELL_PART_OF_COLSPAN];
-                    my $cell_botright_part_of_rowspan = defined $cell_botright && defined $cell_botright->[IDX_EXPTABLE_CELL_PART_OF_ROWSPAN];
-                    my $cell_botright_part_of_colspan = defined $cell_botright && defined $cell_botright->[IDX_EXPTABLE_CELL_PART_OF_COLSPAN];
 
                     # left border
                     if ($ic == 0) {
-                        $buf[$y][$ic*4] = $cell_botleft_part_of_rowspan ? $b_datarowleft : $b_betwrowleft;
+                        $buf[$y][$ic*4] = _exptable_cell_is_rowspan_tail($cell_botleft) ? $b_datarowleft : $b_betwrowleft;
                     }
 
                     # along the width of cell content
-                    if ($cell_botleft_part_of_rowspan) {
+                    if (_exptable_cell_is_rowspan_tail($cell_botleft)) {
                         # space before cell content
                         $buf[$y][$ic*4+1] = " ";
 
@@ -356,16 +372,16 @@ sub generate_table {
                     my $char;
                     if ($ic == $N-1) {
                         # rightmost
-                        if ($cell_botleft_part_of_rowspan) {
+                        if (_exptable_cell_is_rowspan_tail($cell_botleft)) {
                             $char = $b_datarowright;
                         } else {
                             $char = $b_betwrowright;
                         }
                     } else {
                         # between cells
-                        if ($cell_topright_part_of_colspan) {
-                            if ($cell_botright_part_of_colspan) {
-                                if ($cell_botleft_part_of_rowspan) {
+                        if (_exptable_cell_is_colspan_tail($cell_topright)) {
+                            if (_exptable_cell_is_colspan_tail($cell_botright)) {
+                                if (_exptable_cell_is_rowspan_tail($cell_botleft)) {
                                     $char = "";
                                 } else {
                                     $char = $b_betwrowline;
@@ -374,16 +390,16 @@ sub generate_table {
                                 $char = $b_betwrowbetwcol_notop;
                             }
                         } else {
-                            if ($cell_botright_part_of_colspan) {
+                            if (_exptable_cell_is_colspan_tail($cell_botright)) {
                                 $char = $b_betwrowbetwcol_nobot;
                             } else {
-                                if ($cell_botleft_part_of_rowspan) {
-                                    if ($cell_botright_part_of_rowspan) {
+                                if (_exptable_cell_is_rowspan_tail($cell_botleft)) {
+                                    if (_exptable_cell_is_rowspan_tail($cell_botright)) {
                                         $char = $b_datarowbetwcol;
                                     } else {
                                         $char = $b_betwrowbetwcol_noleft;
                                     }
-                                } elsif ($cell_botright_part_of_rowspan) {
+                                } elsif (_exptable_cell_is_rowspan_tail($cell_botright)) {
                                     $char = $b_betwrowbetwcol_noright;
                                 } else {
                                     $char = $b_betwrowbetwcol;
@@ -409,9 +425,8 @@ sub generate_table {
                 $buf[$y][0] = $b_botleft;
                 for my $ic (0..$N-1) {
                     my $cell_right = $ic < $N-1 ? $exptable->[$ir][$ic+1] : undef;
-                    my $cell_right_part_of_colspan = defined $cell_right && $cell_right->[IDX_EXPTABLE_CELL_PART_OF_COLSPAN];
                     $buf[$y][$ic*4+2] = $bs_obj->get_border_char($b_y, 1, $exptable_column_widths->[$ic]+2);
-                    $buf[$y][$ic*4+4] = $ic == $N-1 ? $b_botright : ($cell_right_part_of_colspan ? $b_botline : $b_botbetwcol);
+                    $buf[$y][$ic*4+4] = $ic == $N-1 ? $b_botright : (_exptable_cell_is_colspan_tail($cell_right) ? $b_botline : $b_botbetwcol);
                 }
                 $y++;
             } # DRAW_BOTTOM_BORDER
