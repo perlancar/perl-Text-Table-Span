@@ -21,15 +21,17 @@ sub IDX_EXPTABLE_CELL_COLSPAN()         {1} # number of colspan, only defined fo
 sub IDX_EXPTABLE_CELL_WIDTH()           {2} # visual width. this does not include the cell padding.
 sub IDX_EXPTABLE_CELL_HEIGHT()          {3} # visual height. this does not include row separator.
 sub IDX_EXPTABLE_CELL_TEXT()            {4} # str.
+sub IDX_EXPTABLE_CELL_IS_ROWSPAN_TAIL() {5} # whether this cell is tail of a rowspan
+sub IDX_EXPTABLE_CELL_IS_COLSPAN_TAIL() {6} # whether this cell is tail of a colspan
 
 # whether an exptable cell is the head (1st cell) or tail (the rest) of a
 # rowspan/colspan. these should be macros if possible, for speed.
-sub _exptable_cell_is_rowspan_tail { defined($_[0]) && (!defined($_[0][IDX_EXPTABLE_CELL_ROWSPAN])) }
-sub _exptable_cell_is_colspan_tail { defined($_[0]) && (!defined($_[0][IDX_EXPTABLE_CELL_COLSPAN])) }
-sub _exptable_cell_is_tail         { defined($_[0]) && (!defined($_[0][IDX_EXPTABLE_CELL_ROWSPAN]) || !defined($_[0][IDX_EXPTABLE_CELL_COLSPAN])) }   ## XXX checking only rowspan is sufficient?
-sub _exptable_cell_is_rowspan_head { defined($_[0]) && ( defined($_[0][IDX_EXPTABLE_CELL_ROWSPAN])) }
-sub _exptable_cell_is_colspan_head { defined($_[0]) && ( defined($_[0][IDX_EXPTABLE_CELL_COLSPAN])) }
-sub _exptable_cell_is_head         { defined($_[0]) && ( defined($_[0][IDX_EXPTABLE_CELL_ROWSPAN]) &&  defined($_[0][IDX_EXPTABLE_CELL_COLSPAN])) }   ## XXX checking only rowspan is sufficient?
+sub _exptable_cell_is_rowspan_tail { defined($_[0]) &&  $_[0][IDX_EXPTABLE_CELL_IS_ROWSPAN_TAIL] }
+sub _exptable_cell_is_colspan_tail { defined($_[0]) &&  $_[0][IDX_EXPTABLE_CELL_IS_COLSPAN_TAIL] }
+sub _exptable_cell_is_tail         { defined($_[0]) && ($_[0][IDX_EXPTABLE_CELL_IS_ROWSPAN_TAIL] || $_[0][IDX_EXPTABLE_CELL_IS_COLSPAN_TAIL]) }
+sub _exptable_cell_is_rowspan_head { defined($_[0]) && !$_[0][IDX_EXPTABLE_CELL_IS_ROWSPAN_TAIL] }
+sub _exptable_cell_is_colspan_head { defined($_[0]) && !$_[0][IDX_EXPTABLE_CELL_IS_COLSPAN_TAIL] }
+sub _exptable_cell_is_head         { defined($_[0]) && defined $_[0][IDX_EXPTABLE_CELL_TEXT] }
 
 sub _divide_int_to_n_ints {
     my ($int, $n) = @_;
@@ -151,6 +153,9 @@ sub generate_table {
                             $exptable_cell->[IDX_EXPTABLE_CELL_ROWSPAN]     = $rowspan;
                             $exptable_cell->[IDX_EXPTABLE_CELL_COLSPAN]     = $colspan;
                             $exptable_cell->[IDX_EXPTABLE_CELL_TEXT]        = $text;
+                        } else {
+                            $exptable_cell->[IDX_EXPTABLE_CELL_IS_ROWSPAN_TAIL] = 1 if $ir > 1;
+                            $exptable_cell->[IDX_EXPTABLE_CELL_IS_COLSPAN_TAIL] = 1 if $ic > 1;
                         }
                         #use DDC; dd $exptable; say ''; # debug
                     }
@@ -189,9 +194,10 @@ sub generate_table {
                 my $rowspan = $exptable_cell->[IDX_EXPTABLE_CELL_ROWSPAN];
                 my $colspan = $exptable_cell->[IDX_EXPTABLE_CELL_COLSPAN];
                 my $lh = Text::NonWideChar::Util::length_height($exptable_cell->[IDX_EXPTABLE_CELL_TEXT]);
-                #use DDC; say "D:length_height[$exptable_rownum,$exptable_colnum] = (".DDC::dump($text)."): ".DDC::dump($lh);
+                #use DDC; say "D:length_height[$exptable_rownum,$exptable_colnum] = (".DDC::dump($exptable_cell->[IDX_EXPTABLE_CELL_TEXT])."): ".DDC::dump($lh);
                 my $tot_intercol_widths = ($colspan-1) * $intercol_width;
-                my $tot_interrow_heights = 0; for (1..$rowspan) { $tot_interrow_heights++ if $exptable_bottom_borders->[$exptable_rownum+$_-1] }
+                my $tot_interrow_heights = 0; for (1..$rowspan-1) { $tot_interrow_heights++ if $exptable_bottom_borders->[$exptable_rownum+$_-1] }
+                #say "D:interrow_heights=$tot_interrow_heights";
                 my @heights = _divide_int_to_n_ints(max(0, $lh->[1] - $tot_interrow_heights), $rowspan);
                 my @widths  = _divide_int_to_n_ints(max(0, $lh->[0] - $tot_intercol_widths ), $colspan);
                 for my $ir (1..$rowspan) {
@@ -281,7 +287,7 @@ sub generate_table {
 
             # DRAW_DATA_OR_HEADER_ROW
             {
-                # draw left border
+                # draw leftmost border, which we always do.
                 my $b_y = $ir == 0 && $args{header_row} ? 1 : 3;
                 for my $i (1 .. $exptable_row_heights->[$ir]) {
                     $buf[$y+$i-1][0] = $bs_obj->get_border_char($b_y, 0);
@@ -291,21 +297,14 @@ sub generate_table {
                 for my $ic (0..$N-1) {
                     my $cell = $exptable->[$ir][$ic];
 
-                    # draw border between data cells
-                    for my $i (1 .. $exptable_row_heights->[$ir]) {
-                        next if $ic == $N-1;
-                        next if _exptable_cell_is_colspan_tail($cell);
-                        $buf[$y+$i-1][$ic*4+1] = " ";
-                        $buf[$y+$i-1][$ic*4+2] = $bs_obj->get_border_char($b_y, 1);
-                        $buf[$y+$i-1][$ic*4+3] = " ";
-                    }
-
-                    # draw cell content
+                    # draw cell content. also possibly draw border between
+                    # cells. we don't draw border inside a row/colspan.
                     if (_exptable_cell_is_head($cell)) {
                         $lines = _get_exptable_cell_lines(
                             $exptable, $exptable_row_heights, $exptable_column_widths,
                             $exptable_bottom_borders, $intercol_width, $ir, $ic);
                         for my $i (0..$#{$lines}) {
+                            $buf[$y+$i][$ic*4+0] = $bs_obj->get_border_char($b_y, 1);
                             $buf[$y+$i][$ic*4+1] = " ";
                             $buf[$y+$i][$ic*4+2] = $lines->[$i];
                             $buf[$y+$i][$ic*4+3] = " ";
@@ -313,20 +312,16 @@ sub generate_table {
                         #use DDC; say "D: Drawing exptable_cell($ir,$ic): ", DDC::dump($lines);
                     }
 
-                    # draw right border
+                    # draw rightmost border, which we always do.
                     if ($ic == $N-1) {
-                        if (_exptable_cell_is_colspan_head($cell)) {
-                            my $b_y = $ir == 0 && $args{header_row} ? 1 : 3;
-                            for my $i (1 .. $exptable_row_heights->[$ir]) {
-                                $buf[$y+$i-1][$ic*4+3] = " ";
-                                $buf[$y+$i-1][$ic*4+4] = $bs_obj->get_border_char($b_y, 2);
-                            }
+                        my $b_y = $ir == 0 && $args{header_row} ? 1 : 3;
+                        for my $i (1 .. $exptable_row_heights->[$ir]) {
+                            $buf[$y+$i-1][$ic*4+4] = $bs_obj->get_border_char($b_y, 2);
                         }
                     }
 
                 }
             } # DRAW_DATA_OR_HEADER_ROW
-
             $y += $exptable_row_heights->[$ir];
 
           DRAW_ROW_SEPARATOR:
@@ -348,40 +343,34 @@ sub generate_table {
                 my $b_datarowbetwcol = $bs_obj->get_border_char($b_yd, 1);
                 my $b_datarowright   = $bs_obj->get_border_char($b_yd, 2);
                 for my $ic (0..$N-1) {
-                    my $cell_topleft  = $exptable->[$ir][$ic];
-                    my $cell_topright = $ic < $N-1 ? $exptable->[$ir][$ic+1] : undef;
-                    my $cell_botleft  = $ir < $M-1 ? $exptable->[$ir+1][$ic] : undef;
-                    my $cell_botright = $ir < $M-1 && $ic < $N-1 ? $exptable->[$ir+1][$ic+1] : undef;
+                    my $cell             = $exptable->[$ir][$ic];
+                    my $cell_right       = $ic < $N-1 ? $exptable->[$ir][$ic+1] : undef;
+                    my $cell_bottom      = $ir < $M-1 ? $exptable->[$ir+1][$ic] : undef;
+                    my $cell_rightbottom = $ir < $M-1 && $ic < $N-1 ? $exptable->[$ir+1][$ic+1] : undef;
 
-                    # left border
+                    # leftmost border
                     if ($ic == 0) {
-                        $buf[$y][$ic*4] = _exptable_cell_is_rowspan_tail($cell_botleft) ? $b_datarowleft : $b_betwrowleft;
+                        $buf[$y][0] = _exptable_cell_is_rowspan_tail($cell_bottom) ? $b_datarowleft : $b_betwrowleft;
                     }
 
                     # along the width of cell content
-                    if (_exptable_cell_is_rowspan_tail($cell_botleft)) {
-                        # space before cell content
-                        $buf[$y][$ic*4+1] = " ";
-
-                        # space after cell content
-                        $buf[$y][$ic*4+3] = " ";
-                    } else {
+                    if (_exptable_cell_is_rowspan_head($cell_bottom)) {
                         $buf[$y][$ic*4+2] = $bs_obj->get_border_char($b_y, 1, $exptable_column_widths->[$ic]+2);
                     }
 
                     my $char;
                     if ($ic == $N-1) {
                         # rightmost
-                        if (_exptable_cell_is_rowspan_tail($cell_botleft)) {
+                        if (_exptable_cell_is_rowspan_tail($cell_bottom)) {
                             $char = $b_datarowright;
                         } else {
                             $char = $b_betwrowright;
                         }
                     } else {
                         # between cells
-                        if (_exptable_cell_is_colspan_tail($cell_topright)) {
-                            if (_exptable_cell_is_colspan_tail($cell_botright)) {
-                                if (_exptable_cell_is_rowspan_tail($cell_botleft)) {
+                        if (_exptable_cell_is_colspan_tail($cell_right)) {
+                            if (_exptable_cell_is_colspan_tail($cell_rightbottom)) {
+                                if (_exptable_cell_is_rowspan_tail($cell_bottom)) {
                                     $char = "";
                                 } else {
                                     $char = $b_betwrowline;
@@ -390,16 +379,16 @@ sub generate_table {
                                 $char = $b_betwrowbetwcol_notop;
                             }
                         } else {
-                            if (_exptable_cell_is_colspan_tail($cell_botright)) {
+                            if (_exptable_cell_is_colspan_tail($cell_rightbottom)) {
                                 $char = $b_betwrowbetwcol_nobot;
                             } else {
-                                if (_exptable_cell_is_rowspan_tail($cell_botleft)) {
-                                    if (_exptable_cell_is_rowspan_tail($cell_botright)) {
+                                if (_exptable_cell_is_rowspan_tail($cell_bottom)) {
+                                    if (_exptable_cell_is_rowspan_tail($cell_rightbottom)) {
                                         $char = $b_datarowbetwcol;
                                     } else {
                                         $char = $b_betwrowbetwcol_noleft;
                                     }
-                                } elsif (_exptable_cell_is_rowspan_tail($cell_botright)) {
+                                } elsif (_exptable_cell_is_rowspan_tail($cell_rightbottom)) {
                                     $char = $b_betwrowbetwcol_noright;
                                 } else {
                                     $char = $b_betwrowbetwcol;
@@ -435,7 +424,7 @@ sub generate_table {
     } # DRAW_EXPTABLE
 
     for my $row (@buf) { for (@$row) { $_ = "" if !defined($_) } } # debug. remove undef to "" to save dump width
-    use DDC; dd \@buf;
+    #use DDC; dd \@buf;
     join "", (map { my $linebuf = $_; join("", grep {defined} @$linebuf)."\n" } @buf);
 }
 
@@ -572,11 +561,29 @@ Or, you can also use the C<cell_attrs> option:
      ],
  );
 
+will output something like:
+
+ .------+------------------------------+---------------------+------------------------------+------------------------------+------------------+------------------------------+----------------------.
+ | Year | Comedy                       | Drama               | Variety                      | Lead Comedy Actor            | Lead Drama Actor | Lead Comedy Actress          | Lead Drama Actress   |
+ +======+==============================+=====================+==============================+==============================+==================+==============================+======================+
+ | 1962 | The Bob Newhart Show (NBC)   | The Defenders (CBS) | The Garry Moore Show (CBS)   | E. G. Marshall                                  | Shirley Booth                                       |
+ +------+------------------------------+                     +------------------------------+ The Defenders (CBS)                             | Hazel (NBC)                                         |
+ | 1963 | The Dick Van Dyke Show (CBS) |                     | The Andy Williams Show (NBC) |                                                 |                                                     |
+ +------+                              |                     +------------------------------+-------------------------------------------------+-----------------------------------------------------+
+ | 1964 |                              |                     | The Danny Kaye Show (CBS)    | Dick Van Dyke                                   | Mary Tyler Moore                                    |
+ |      |                              |                     |                              | The Dick Van Dyke Show (CBS)                    | The Dick Van Dyke Show (CBS)                        |
+ +------+------------------------------+---------------------+------------------------------+-------------------------------------------------+-----------------------------------------------------+
+ | 1965 | four winners                                                                      | five winners                                                                                          |
+ +------+------------------------------+---------------------+------------------------------+------------------------------+------------------+------------------------------+----------------------+
+ | 1966 | The Dick Van Dyke Show (CBS) | The Fugitive (ABC)  | The Andy Williams Show (NBC) | Dick Van Dyke                | Bill Cosby       | Mary Tyler Moore             | Barbara Stanwyck     |
+ |      |                              |                     |                              | The Dick Van Dyke Show (CBS) | I Spy (CBS)      | The Dick Van Dyke Show (CBS) | The Big Valley (CBS) |
+ `------+------------------------------+---------------------+------------------------------+------------------------------+------------------+------------------------------+----------------------'
+
 
 =head1 DESCRIPTION
 
-This module is like L<Text::Table::Tiny> (0.04) with added support for column/row
-spans, and border style>.
+This module is like L<Text::Table::Tiny> (0.04) with added support for
+column/row spans, and border style.
 
 
 =head1 FUNCTIONS
@@ -588,6 +595,8 @@ Usage:
  my $table_str = generate_table(%args);
 
 Arguments:
+
+=over
 
 =item * rows
 

@@ -50,7 +50,8 @@ my $rows = [
 binmode STDOUT, "utf8";
 print generate_table(
     rows => $rows,
-    border_style => "UTF8::SingleLineBoldHeader",
+    #border_style => "UTF8::SingleLineBoldHeader",
+    border_style => "ASCII::SingleLineDoubleAfterHeader",
     row_separator => 1,
     header_row => 1,
 );
