@@ -549,7 +549,7 @@ Or, you can also use the C<cell_attrs> option:
      header_row => 1,
      #border_style => 'ASCII::SingleLineDoubleAfterHeader', # module in BorderStyle::* namespace, without the prefix. default is ASCII::SingleLineDoubleAfterHeader
      cell_attrs => [
-         # rownum (0-based int), colnum (0-based int), styles (hashref)
+         # rownum (0-based int), colnum (0-based int), attributes (hashref)
          [1, 2, {rowspan=>3}],
          [1, 4, {rowspan=>2, colspan=>2}],
          [1, 5, {rowspan=>2, colspan=>2}],
