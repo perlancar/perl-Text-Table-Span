@@ -437,6 +437,8 @@ sub generate_table {
 1;
 # ABSTRACT: Text::Table::Tiny + support for column/row spans
 
+=encoding utf8
+
 =for Pod::Coverage ^(.+)$
 
 =head1 SYNOPSIS
@@ -578,6 +580,32 @@ will output something like:
  | 1966 | The Dick Van Dyke Show (CBS) | The Fugitive (ABC)  | The Andy Williams Show (NBC) | Dick Van Dyke                | Bill Cosby       | Mary Tyler Moore             | Barbara Stanwyck     |
  |      |                              |                     |                              | The Dick Van Dyke Show (CBS) | I Spy (CBS)      | The Dick Van Dyke Show (CBS) | The Big Valley (CBS) |
  `------+------------------------------+---------------------+------------------------------+------------------------------+------------------+------------------------------+----------------------'
+
+If you set the C<border_style> argument to C<"UTF8::SingleLineBoldHeader">:
+
+ print generate_table(
+     rows => $rows,
+     border_style => "UTF8::SingleLineBoldHeader",
+     ...
+ );
+
+then the output will be something like this:
+
+ ┏━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━┓
+ ┃ Year ┃ Comedy                       ┃ Drama               ┃ Variety                      ┃ Lead Comedy Actor            ┃ Lead Drama Actor ┃ Lead Comedy Actress          ┃ Lead Drama Actress   ┃
+ ┡━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┻━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┻━━━━━━━━━━━━━━━━━━━━━━┩
+ │ 1962 │ The Bob Newhart Show (NBC)   │ The Defenders (CBS) │ The Garry Moore Show (CBS)   │ E. G. Marshall                                  │ Shirley Booth                                       │
+ ├──────┼──────────────────────────────┤                     ├──────────────────────────────┤ The Defenders (CBS)                             │ Hazel (NBC)                                         │
+ │ 1963 │ The Dick Van Dyke Show (CBS) │                     │ The Andy Williams Show (NBC) │                                                 │                                                     │
+ ├──────┤                              │                     ├──────────────────────────────┼─────────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+ │ 1964 │                              │                     │ The Danny Kaye Show (CBS)    │ Dick Van Dyke                                   │ Mary Tyler Moore                                    │
+ │      │                              │                     │                              │ The Dick Van Dyke Show (CBS)                    │ The Dick Van Dyke Show (CBS)                        │
+ ├──────┼──────────────────────────────┴─────────────────────┴──────────────────────────────┼─────────────────────────────────────────────────┴─────────────────────────────────────────────────────┤
+ │ 1965 │ four winners                                                                      │ five winners                                                                                          │
+ ├──────┼──────────────────────────────┬─────────────────────┬──────────────────────────────┼──────────────────────────────┬──────────────────┬──────────────────────────────┬──────────────────────┤
+ │ 1966 │ The Dick Van Dyke Show (CBS) │ The Fugitive (ABC)  │ The Andy Williams Show (NBC) │ Dick Van Dyke                │ Bill Cosby       │ Mary Tyler Moore             │ Barbara Stanwyck     │
+ │      │                              │                     │                              │ The Dick Van Dyke Show (CBS) │ I Spy (CBS)      │ The Dick Van Dyke Show (CBS) │ The Big Valley (CBS) │
+ └──────┴──────────────────────────────┴─────────────────────┴──────────────────────────────┴──────────────────────────────┴──────────────────┴──────────────────────────────┴──────────────────────┘
 
 
 =head1 DESCRIPTION
