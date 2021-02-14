@@ -1,3 +1,15 @@
+0.002   2021-02-15  Released-By: PERLANCAR; Urgency: low
+
+        - No functional changes.
+
+	- [doc] In Synopsis, add sample output using border style
+          UTF8::SingleLineBoldHeader.
+
+	- [doc] Update term in sample code's comment.
+
+	- [testing] Remove extraneous, unused code in test.
+
+
 0.001   2021-02-14  Released-By: PERLANCAR
 
         - First release.
