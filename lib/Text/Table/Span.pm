@@ -674,6 +674,9 @@ row.
 
 L<Text::Table::TinyBorderStyle>
 
+L<Acme::CPANModules::TextTable> contains a comparison and benchmark for modules
+that generate text table.
+
 HTML E<lt>TABLEE<gt> element,
 L<https://www.w3.org/TR/2014/REC-html5-20141028/tabular-data.html>,
 L<https://www.w3.org/html/wiki/Elements/table>
