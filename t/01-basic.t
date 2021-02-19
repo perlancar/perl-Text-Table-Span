@@ -242,7 +242,7 @@ _
             ["A3"],
         ],
         args => {
-            align => 'right',
+            align => 'right', # table arg
             header_row=>1,
             separate_rows=>1,
             row_attrs => [
@@ -252,7 +252,7 @@ _
                 [1, {align=>'left'}], # col attrs
             ],
             cell_attrs => [
-                [2, 0, {align=>'left'}],
+                [2, 0, {align=>'left'}], # cell attrs
             ],
         },
         result => <<'_',
@@ -269,8 +269,49 @@ _
 _
     },
 
+    {
+        name => 'valign',
+        rows => [
+            [{text=>"A0", valign=>'middle'},"B0L1\nL2\nL3","C0"], # cell attrs in cell (A0)
+            ["A1L1\nL2\nL3","B1","C1"],
+            ["A2L1\nL2\nL3", {text=>"BC23L1\nL2\nL3",rowspan=>2,colspan=>2}],
+            ["A3"],
+        ],
+        args => {
+            valign => 'bottom', # table arg (e.g. C0)
+            header_row=>1,
+            separate_rows=>1,
+            row_attrs => [
+                [1, {valign=>'top'}], # row attrs (B1)
+            ],
+            col_attrs => [
+                [1, {valign=>'top'}], # col attrs (BC23)
+            ],
+            cell_attrs => [
+                [1, 2, {valign=>'middle'}], # cell attrs (C1)
+            ],
+        },
+        result => <<'_',
+.------+------+----.
+|      | B0L1 |    |
+| A0   | L2   |    |
+|      | L3   | C0 |
++======+======+====+
+| A1L1 | B1   |    |
+| L2   |      | C1 |
+| L3   |      |    |
++------+------+----+
+| A2L1 | BC23L1    |
+| L2   | L2        |
+| L3   | L3        |
++------+           |
+| A3   |           |
+`------+-----------'
+_
+    },
+
 );
-my @include_tests = ("align"); # e.g. ("1x1")
+my @include_tests;# = ("valign"); # e.g. ("1x1")
 my $border_style;# = "UTF8::SingleLineBoldHeader"; # force border style
 
 for my $test (@tests) {

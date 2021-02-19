@@ -48,6 +48,28 @@ sub _divide_int_to_n_ints {
     @ints;
 }
 
+sub _vpad {
+    my ($lines, $num_lines, $width, $which) = @_;
+    return $lines if @$lines >= $num_lines; # we don't do truncate
+    my @vpadded_lines;
+    my $pad_line = " " x $width;
+    if ($which =~ /^b/) { # bottom padding
+        push @vpadded_lines, @$lines;
+        push @vpadded_lines, $pad_line for @$lines+1 .. $num_lines;
+    } elsif ($which =~ /^t/) { # top padding
+        push @vpadded_lines, $pad_line for @$lines+1 .. $num_lines;
+        push @vpadded_lines, @$lines;
+    } else { # center padding
+        my $p  = $num_lines - @$lines;
+        my $p1 = int($p/2);
+        my $p2 = $p - $p1;
+        push @vpadded_lines, $pad_line for 1..$p1;
+        push @vpadded_lines, @$lines;
+        push @vpadded_lines, $pad_line for 1..$p2;
+    }
+    \@vpadded_lines;
+}
+
 sub _get_attr {
     my ($attr_name, $y, $x, $cell_value, $table_args) = @_;
 
@@ -107,10 +129,12 @@ sub _get_exptable_cell_lines {
         $bottom_borders, $intercol_width, $y, $x) = @_;
 
     my $exptable_cell = $exptable->[$y][$x];
-    my $cell  = $exptable_cell->[IDX_EXPTABLE_CELL_ORIG];
-    my $text  = ref $cell eq 'HASH' ? $cell->{text} : $cell;
-    my $align = _get_attr('align', $y, $x, $cell, $table_args) // 'left';
-    my $pad   = $align eq 'left' ? 'r' : $align eq 'right' ? 'l' : 'c';
+    my $cell   = $exptable_cell->[IDX_EXPTABLE_CELL_ORIG];
+    my $text   = ref $cell eq 'HASH' ? $cell->{text} : $cell;
+    my $align  = _get_attr('align', $y, $x, $cell, $table_args) // 'left';
+    my $valign = _get_attr('valign', $y, $x, $cell, $table_args) // 'top';
+    my $pad    = $align eq 'left' ? 'r' : $align eq 'right' ? 'l' : 'c';
+    my $vpad   = $valign eq 'top' ? 'b' : $valign eq 'bottom' ? 't' : 'c';
     my $height = 0;
     my $width  = 0;
     for my $ic (1..$exptable_cell->[IDX_EXPTABLE_CELL_COLSPAN]) {
@@ -122,15 +146,9 @@ sub _get_exptable_cell_lines {
         $height++ if $bottom_borders->[$y+$ir-2] && $ir > 1;
     }
 
-    my @lines;
-    my @datalines = split /\R/, $text;
-    for (1..@datalines) {
-        push @lines, pad($datalines[$_-1], $width, $pad, ' ', 'truncate');
-    }
-    for (@datalines+1 .. $height) {
-        push @lines, " " x $width;
-    }
-    \@lines;
+    my @datalines = map { pad($_, $width, $pad, ' ', 'truncate') }
+        (split /\R/, $text);
+    _vpad(\@datalines, $height, $width, $vpad);
 }
 
 sub generate_table {
@@ -708,9 +726,15 @@ L<App::BorderStyleUtils>.
 
 =item * align
 
-String. Value is either C<"left">, C<"middle">, C<"right">. Specify text
-alignment of cells. Overriden by overridden by per-row, per-column, or per-cell
-attribute of the same name.
+String. Value is either C<"left">, C<"middle">, C<"right">. Specify horizontal
+text alignment of cells. Overriden by overridden by per-row, per-column, or
+per-cell attribute of the same name.
+
+=item * valign
+
+String. Value is either C<"top">, C<"middle">, C<"bottom">. Specify vertical
+text alignment of cells. Overriden by overridden by per-row, per-column, or
+per-cell attribute of the same name.
 
 =item * row_attrs
 
@@ -751,6 +775,12 @@ String. Value is either C<"left">, C<"middle">, C<"right">. Specify text
 alignment of cells. Override table argument, but is overridden by per-column or
 per-cell attribute of the same name.
 
+=head2 valign
+
+String. Value is either C<"top">, C<"middle">, C<"bottom">. Specify vertical
+text alignment of cells. Override table argument, but is overridden by
+per-column or per-cell attribute of the same name.
+
 =head2 bottom_border
 
 Boolean.
@@ -768,6 +798,12 @@ String. Value is either C<"left">, C<"middle">, C<"right">. Specify text
 alignment of cells. Override table argument and per-row attribute of the same
 name, but is overridden by per-cell attribute of the same name.
 
+=head2 valign
+
+String. Value is either C<"top">, C<"middle">, C<"bottom">. Specify vertical
+text alignment of cells. Override table argument and per-row attribute of the
+same name, but is overridden by per-cell attribute of the same name.
+
 
 =head1 PER-CELL ATTRIBUTES
 
@@ -775,6 +811,12 @@ name, but is overridden by per-cell attribute of the same name.
 
 String. Value is either C<"left">, C<"middle">, C<"right">. Override table
 argument, per-row attribute, and per-column attribute of the same name.
+
+=head2 valign
+
+String. Value is either C<"top">, C<"middle">, C<"bottom">. Specify vertical
+text alignment of cells. Override table argument, per-row attribute, and
+per-column attribute of the same name.
 
 =head2 colspan
 
