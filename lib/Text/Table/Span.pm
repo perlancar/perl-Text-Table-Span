@@ -496,6 +496,7 @@ hashrefs:
  print generate_table(
      rows => $rows,
      header_row => 1,
+     separate_rows => 1,
      #border_style => 'ASCII::SingleLineDoubleAfterHeader', # module in BorderStyle::* namespace, without the prefix. default is ASCII::SingleLineDoubleAfterHeader
  );
 
@@ -549,6 +550,7 @@ Or, you can also use the C<cell_attrs> option:
  print generate_table(
      rows => $rows,
      header_row => 1,
+     separate_rows => 1,
      #border_style => 'ASCII::SingleLineDoubleAfterHeader', # module in BorderStyle::* namespace, without the prefix. default is ASCII::SingleLineDoubleAfterHeader
      cell_attrs => [
          # rownum (0-based int), colnum (0-based int), attributes (hashref)

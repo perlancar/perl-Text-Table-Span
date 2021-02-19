@@ -52,6 +52,6 @@ print generate_table(
     rows => $rows,
     #border_style => "UTF8::SingleLineBoldHeader",
     border_style => "ASCII::SingleLineDoubleAfterHeader",
-    row_separator => 1,
+    separate_rows => 1,
     header_row => 1,
 );
