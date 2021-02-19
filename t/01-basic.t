@@ -236,7 +236,7 @@ _
     {
         name => 'align',
         rows => [
-            [{text=>"A0", align=>'middle'},"B0","C0"],
+            [{text=>"A0", align=>'middle'},"B0","C0"], # cell attrs (hash cell)
             ["A1L1\nL2","B1","C1"],
             ["A2", {text=>"BC23L1\nL2\nL3",rowspan=>2,colspan=>2}],
             ["A3"],
@@ -246,10 +246,13 @@ _
             header_row=>1,
             separate_rows=>1,
             row_attrs => [
-                [1, {align=>'left'}],
+                [1, {align=>'left'}], # row attrs
             ],
             col_attrs => [
-                [1, {align=>'left'}],
+                [1, {align=>'left'}], # col attrs
+            ],
+            cell_attrs => [
+                [2, 0, {align=>'left'}],
             ],
         },
         result => <<'_',
@@ -259,7 +262,7 @@ _
 | A1L1 | B1 | C1 |
 | L2   |    |    |
 +------+----+----+
-|   A2 | BC23L1  |
+| A2   | BC23L1  |
 +------+ L2      |
 |   A3 | L3      |
 `------+---------'
