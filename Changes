@@ -1,3 +1,8 @@
+0.004   2021-02-19  Released-By: PERLANCAR; Urgency: medium
+
+	- Add missing prereq [GH#1].
+
+
 0.003   2021-02-16  Released-By: PERLANCAR; Urgency: low
 
         - No functional changes.
