@@ -106,9 +106,14 @@ _
     },
 
     {
-        name => 'cell attr: bottom_border',
-        rows => [["A","BBB"], ["CC","D"], [{text=>"E", bottom_border=>1},"FF"],["G","H"]],
-        args => {header_row=>1},
+        name => 'row attr: bottom_border',
+        rows => [["A","BBB"], ["CC","D"], ["E","FF"],["G","H"]],
+        args => {
+            header_row=>1,
+            row_attrs => [
+                [2, {bottom_border=>1}],
+            ],
+        },
         result => <<'_',
 .----+-----.
 | A  | BBB |
@@ -228,8 +233,41 @@ _
 _
     },
 
+    {
+        name => 'align',
+        rows => [
+            [{text=>"A0", align=>'middle'},"B0","C0"],
+            ["A1L1\nL2","B1","C1"],
+            ["A2", {text=>"BC23L1\nL2\nL3",rowspan=>2,colspan=>2}],
+            ["A3"],
+        ],
+        args => {
+            align => 'right',
+            header_row=>1,
+            separate_rows=>1,
+            row_attrs => [
+                [1, {align=>'left'}],
+            ],
+            col_attrs => [
+                [1, {align=>'left'}],
+            ],
+        },
+        result => <<'_',
+.------+----+----.
+|  A0  | B0 | C0 |
++======+====+====+
+| A1L1 | B1 | C1 |
+| L2   |    |    |
++------+----+----+
+|   A2 | BC23L1  |
++------+ L2      |
+|   A3 | L3      |
+`------+---------'
+_
+    },
+
 );
-my @include_tests;# = ("rowcolspan 1"); # e.g. ("1x1")
+my @include_tests = ("align"); # e.g. ("1x1")
 my $border_style;# = "UTF8::SingleLineBoldHeader"; # force border style
 
 for my $test (@tests) {

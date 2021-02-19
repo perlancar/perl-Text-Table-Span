@@ -20,7 +20,7 @@ sub IDX_EXPTABLE_CELL_ROWSPAN()         {0} # number of rowspan, only defined fo
 sub IDX_EXPTABLE_CELL_COLSPAN()         {1} # number of colspan, only defined for the colspan head
 sub IDX_EXPTABLE_CELL_WIDTH()           {2} # visual width. this does not include the cell padding.
 sub IDX_EXPTABLE_CELL_HEIGHT()          {3} # visual height. this does not include row separator.
-sub IDX_EXPTABLE_CELL_TEXT()            {4} # str.
+sub IDX_EXPTABLE_CELL_ORIG()            {4} # str/hash
 sub IDX_EXPTABLE_CELL_IS_ROWSPAN_TAIL() {5} # whether this cell is tail of a rowspan
 sub IDX_EXPTABLE_CELL_IS_COLSPAN_TAIL() {6} # whether this cell is tail of a colspan
 
@@ -31,7 +31,7 @@ sub _exptable_cell_is_colspan_tail { defined($_[0]) &&  $_[0][IDX_EXPTABLE_CELL_
 sub _exptable_cell_is_tail         { defined($_[0]) && ($_[0][IDX_EXPTABLE_CELL_IS_ROWSPAN_TAIL] || $_[0][IDX_EXPTABLE_CELL_IS_COLSPAN_TAIL]) }
 sub _exptable_cell_is_rowspan_head { defined($_[0]) && !$_[0][IDX_EXPTABLE_CELL_IS_ROWSPAN_TAIL] }
 sub _exptable_cell_is_colspan_head { defined($_[0]) && !$_[0][IDX_EXPTABLE_CELL_IS_COLSPAN_TAIL] }
-sub _exptable_cell_is_head         { defined($_[0]) && defined $_[0][IDX_EXPTABLE_CELL_TEXT] }
+sub _exptable_cell_is_head         { defined($_[0]) && defined $_[0][IDX_EXPTABLE_CELL_ORIG] }
 
 sub _divide_int_to_n_ints {
     my ($int, $n) = @_;
@@ -48,19 +48,76 @@ sub _divide_int_to_n_ints {
     @ints;
 }
 
+sub _get_attr {
+    my ($attr_name, $y, $x, $cell_value, $table_args) = @_;
+
+  CELL_ATTRS_FROM_CELL_VALUE: {
+        last unless ref $cell_value eq 'HASH';
+        my $attr_val = $cell_value->{$attr_name};
+        return $attr_val if defined $attr_val;
+    }
+
+  CELL_ATTRS_FROM_CELL_ATTRS_ARG:
+    {
+        last unless defined $x && defined $y;
+        my $cell_attrs = $table_args->{cell_attrs};
+        last unless $cell_attrs;
+        for my $entry (@$cell_attrs) {
+            next unless $entry->[0] == $y && $entry->[1] == $x;
+            my $attr_val = $entry->[2]{$attr_name};
+            return $attr_val if defined $attr_val;
+        }
+    }
+
+  COL_ATTRS:
+    {
+        last unless defined $x;
+        my $col_attrs = $table_args->{col_attrs};
+        last unless $col_attrs;
+        for my $entry (@$col_attrs) {
+            next unless $entry->[0] == $x;
+            my $attr_val = $entry->[1]{$attr_name};
+            return $attr_val if defined $attr_val;
+        }
+    }
+
+  ROW_ATTRS:
+    {
+        last unless defined $y;
+        my $row_attrs = $table_args->{row_attrs};
+        last unless $row_attrs;
+        for my $entry (@$row_attrs) {
+            next unless $entry->[0] == $y;
+            my $attr_val = $entry->[1]{$attr_name};
+            return $attr_val if defined $attr_val;
+        }
+    }
+
+  TABLE_ARGS:
+    {
+        my $attr_val = $table_args->{$attr_name};
+        return $attr_val if defined $attr_val;
+    }
+
+    undef;
+}
+
 sub _get_exptable_cell_lines {
-    my ($exptable, $row_heights, $column_widths,
+    my ($table_args, $exptable, $row_heights, $column_widths,
         $bottom_borders, $intercol_width, $y, $x) = @_;
 
-    my $cell = $exptable->[$y][$x];
-    my $text = $cell->[IDX_EXPTABLE_CELL_TEXT];
+    my $exptable_cell = $exptable->[$y][$x];
+    my $cell  = $exptable_cell->[IDX_EXPTABLE_CELL_ORIG];
+    my $text  = ref $cell eq 'HASH' ? $cell->{text} : $cell;
+    my $align = _get_attr('align', $y, $x, $cell, $table_args) // 'left';
+    my $pad   = $align eq 'left' ? 'r' : $align eq 'right' ? 'l' : 'c';
     my $height = 0;
     my $width  = 0;
-    for my $ic (1..$cell->[IDX_EXPTABLE_CELL_COLSPAN]) {
+    for my $ic (1..$exptable_cell->[IDX_EXPTABLE_CELL_COLSPAN]) {
         $width += $column_widths->[$x+$ic-1];
         $width += $intercol_width if $ic > 1;
     }
-    for my $ir (1..$cell->[IDX_EXPTABLE_CELL_ROWSPAN]) {
+    for my $ir (1..$exptable_cell->[IDX_EXPTABLE_CELL_ROWSPAN]) {
         $height += $row_heights->[$y+$ir-1];
         $height++ if $bottom_borders->[$y+$ir-2] && $ir > 1;
     }
@@ -68,7 +125,7 @@ sub _get_exptable_cell_lines {
     my @lines;
     my @datalines = split /\R/, $text;
     for (1..@datalines) {
-        push @lines, pad($datalines[$_-1], $width, 'right', ' ', 'truncate');
+        push @lines, pad($datalines[$_-1], $width, $pad, ' ', 'truncate');
     }
     for (@datalines+1 .. $height) {
         push @lines, " " x $width;
@@ -152,7 +209,7 @@ sub generate_table {
                         if ($ir == 1 && $ic == 1) {
                             $exptable_cell->[IDX_EXPTABLE_CELL_ROWSPAN]     = $rowspan;
                             $exptable_cell->[IDX_EXPTABLE_CELL_COLSPAN]     = $colspan;
-                            $exptable_cell->[IDX_EXPTABLE_CELL_TEXT]        = $text;
+                            $exptable_cell->[IDX_EXPTABLE_CELL_ORIG]        = $cell;
                         } else {
                             $exptable_cell->[IDX_EXPTABLE_CELL_IS_ROWSPAN_TAIL] = 1 if $ir > 1;
                             $exptable_cell->[IDX_EXPTABLE_CELL_IS_COLSPAN_TAIL] = 1 if $ic > 1;
@@ -160,11 +217,10 @@ sub generate_table {
                         #use DDC; dd $exptable; say ''; # debug
                     }
 
-                    my $el;
-                    $el = first {$_->[0] == $rownum+$ir-1 && $_->[1] == 0 && $_->[2]{bottom_border}} @$cell_attrs;
-                    $el->{bottom_border} and $exptable_bottom_borders->[$ir] = 1;
-                    $el = first {$_->[0] == $rownum+$ir-1 && $_->[1] == 0 && $_->[2]{top_border}} @$cell_attrs;
-                    $el->{top_border} && $rownum+$ir-1 > 0 and $exptable_bottom_borders->[$rownum+$ir-2] = 1;
+                    my $val;
+                    $val = _get_attr('bottom_border', $rownum+$ir-1, undef, undef, \%args); $exptable_bottom_borders->[$rownum+$ir-1] = $val if $val;
+                    $val = _get_attr('top_border'   , $rownum+$ir-1, undef, undef, \%args); $exptable_bottom_borders->[$rownum+$ir-2] = $val if $val;
+                    $exptable_bottom_borders->[0] = 1 if $rownum+$ir-1 == 0 && $args{header_row};
 
                     $M = $rownum+$ir if $M < $rownum+$ir;
                 }
@@ -172,14 +228,7 @@ sub generate_table {
                 $exptable_colnum += $colspan;
                 $exptable_colnum++ while defined $exptable->[$rownum][$exptable_colnum];
 
-                my $el;
-                $exptable_bottom_borders->[$rownum+$rowspan-1] = 1 if
-                    ($rownum == 0 && $args{header_row}) ||
-                    (ref $cell eq 'HASH' && $cell->{bottom_border});
-                $exptable_bottom_borders->[$rownum+$rowspan-2] = 1 if
-                    $rownum > 0 &&
-                    (ref $cell eq 'HASH' && $cell->{top_border});
-                } # for a row
+            } # for a row
             $N = $exptable_colnum if $N < $exptable_colnum;
         } # for rows
 
@@ -193,8 +242,10 @@ sub generate_table {
                 next if _exptable_cell_is_tail($exptable_cell);
                 my $rowspan = $exptable_cell->[IDX_EXPTABLE_CELL_ROWSPAN];
                 my $colspan = $exptable_cell->[IDX_EXPTABLE_CELL_COLSPAN];
-                my $lh = Text::NonWideChar::Util::length_height($exptable_cell->[IDX_EXPTABLE_CELL_TEXT]);
-                #use DDC; say "D:length_height[$exptable_rownum,$exptable_colnum] = (".DDC::dump($exptable_cell->[IDX_EXPTABLE_CELL_TEXT])."): ".DDC::dump($lh);
+                my $cell = $exptable_cell->[IDX_EXPTABLE_CELL_ORIG];
+                my $text = ref $cell eq 'HASH' ? $cell->{text} : $cell;
+                my $lh = Text::NonWideChar::Util::length_height($text);
+                #use DDC; say "D:length_height[$exptable_rownum,$exptable_colnum] = (".DDC::dump($text)."): ".DDC::dump($lh);
                 my $tot_intercol_widths = ($colspan-1) * $intercol_width;
                 my $tot_interrow_heights = 0; for (1..$rowspan-1) { $tot_interrow_heights++ if $exptable_bottom_borders->[$exptable_rownum+$_-1] }
                 #say "D:interrow_heights=$tot_interrow_heights";
@@ -212,6 +263,7 @@ sub generate_table {
     } # CONSTRUCT_EXPTABLE
     #use DDC; dd $exptable; # debug
     #print "D: exptable size: $M x $N (HxW)\n"; # debug
+    use DDC; print "bottom borders: "; dd $exptable_bottom_borders; # debug
 
   OPTIMIZE_EXPTABLE: {
         # TODO
@@ -250,7 +302,6 @@ sub generate_table {
     } # DETERMINE_SIZE_OF_EACH_EXPTABLE_COLUMN_AND_ROW
     #use DDC; print "column widths: "; dd $exptable_column_widths; # debug
     #use DDC; print "row heights: "; dd $exptable_row_heights; # debug
-    #use DDC; print "bottom borders: "; dd $exptable_bottom_borders; # debug
 
     # each elem is an arrayref containing characters to render a line of the
     # table, e.g. for element [0] the row is all borders. for element [1]:
@@ -301,7 +352,7 @@ sub generate_table {
                     # cells. we don't draw border inside a row/colspan.
                     if (_exptable_cell_is_head($cell)) {
                         $lines = _get_exptable_cell_lines(
-                            $exptable, $exptable_row_heights, $exptable_column_widths,
+                            \%args, $exptable, $exptable_row_heights, $exptable_column_widths,
                             $exptable_bottom_borders, $intercol_width, $ir, $ic);
                         for my $i (0..$#{$lines}) {
                             $buf[$y+$i][$ic*4+0] = $bs_obj->get_border_char($b_y, 1);
@@ -634,7 +685,8 @@ Array of arrayrefs (of strings or hashrefs). Required. Each array element is a
 row of cells. A cell can be a string like C<"foo"> specifying only the text
 (equivalent to C<<{ text=>"foo" >>) or a hashref which allows you to specify a
 cell's text (C<text>) as well as attributes like C<rowspan> (int, >= 1),
-C<colspan> (int, >= 1), C<bottom_border> (bool), or C<top_border>.
+C<colspan> (int, >= 1), etc. See L</PER-CELL ATTRIBUTES> for the list of known
+per-cell attributes.
 
 Currently, C<top_border> and C<bottom_border> needs to be specified for the
 first column of a row and will take effect for the whole row.
@@ -654,11 +706,30 @@ module under the L<BorderStyle> namespace, without the namespace prefix. To see
 how a border style looks like, you can use the CLI L<show-border-style> from
 L<App::BorderStyleUtils>.
 
+=item * align
+
+String. Value is either C<"left">, C<"middle">, C<"right">. Specify text
+alignment of cells. Overriden by overridden by per-row, per-column, or per-cell
+attribute of the same name.
+
+=item * row_attrs
+
+Array of records. Optional. Specify per-row attributes. Each record is a
+2-element arrayref: C<< [$row_idx, \%attrs] >>. C<$row_idx> is zero-based. See
+L</PER-ROW ATTRIBUTES> for the list of known attributes.
+
+=item * col_attrs
+
+Array of records. Optional. Specify per-column attributes. Each record is a
+2-element arrayref: C<< [$col_idx, \%attrs] >>. C<$col_idx> is zero-based. See
+L</PER-COLUMN ATTRIBUTES> for the list of known attributes.
+
 =item * cell_attrs
 
-Array of records. Optional. Each record is a 3-element arrayref: C<< [$row_idx,
-$col_idx, \%styles] >>. C<$row_idx> and C<$col_idx> are zero-based. See L</rows>
-for the list of known attributes.
+Array of records. Optional. Specify per-cell attributes. Each record is a
+3-element arrayref: C<< [$row_idx, $col_idx, \%attrs] >>. C<$row_idx> and
+C<$col_idx> are zero-based. See L</PER-CELL ATTRIBUTES> for the list of known
+attributes.
 
 Alternatively, you can specify a cell's attribute in the L</rows> argument
 directly, by specifying a cell as hashref.
@@ -666,15 +737,55 @@ directly, by specifying a cell as hashref.
 =item * separate_rows
 
 Boolean. Optional. Default 0. If set to true, will add a separator between data
-rows. Equivalent to setting C<bottom_border> or C<top_border> attribute for each
-row.
+rows. Equivalent to setting C<bottom_border> or C<top_border> attribute to true
+for each row.
 
 =back
 
 
-=head1 SEE ALSO
+=head1 PER-ROW ATTRIBUTES
 
-L<Text::Table::TinyBorderStyle>
+=head2 align
+
+String. Value is either C<"left">, C<"middle">, C<"right">. Specify text
+alignment of cells. Override table argument, but is overridden by per-column or
+per-cell attribute of the same name.
+
+=head2 bottom_border
+
+Boolean.
+
+=head2 top_border
+
+Boolean.
+
+
+=head1 PER-COLUMN ATTRIBUTES
+
+=head2 align
+
+String. Value is either C<"left">, C<"middle">, C<"right">. Specify text
+alignment of cells. Override table argument and per-row attribute of the same
+name, but is overridden by per-cell attribute of the same name.
+
+
+=head1 PER-CELL ATTRIBUTES
+
+=head2 align
+
+String. Value is either C<"left">, C<"middle">, C<"right">. Override table
+argument, per-row attribute, and per-column attribute of the same name.
+
+=head2 colspan
+
+Positive integer. Default 1.
+
+=head2 rowspan
+
+Positive integer. Default 1.
+
+
+=head1 SEE ALSO
 
 L<Acme::CPANModules::TextTable> contains a comparison and benchmark for modules
 that generate text table.
