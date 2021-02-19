@@ -91,9 +91,9 @@ _
     },
 
     {
-        name => '3x2 + header_row + row_separator',
+        name => '3x2 + header_row + separate_rows',
         rows => [["A","BBB"], ["CC","D"], ["F","GG"]],
-        args => {header_row=>1, row_separator=>1},
+        args => {header_row=>1, separate_rows=>1},
         result => <<'_',
 .----+-----.
 | A  | BBB |
@@ -130,7 +130,7 @@ _
             ["A3", {text=>"B34",rowspan=>2}],
             ["A4"],
         ],
-        args => {header_row=>1, row_separator=>1},
+        args => {header_row=>1, separate_rows=>1},
         result => <<'_',
 .-----+-----.
 | A0  | B0  |
@@ -149,7 +149,7 @@ _
     {
         name => 'row height: rowspan longer',
         rows => [["A0","B0"], [{text=>"A1L1\nL2\nL3\nL4",rowspan=>2},"B1"], ["B2"]],
-        args => {header_row=>1, row_separator=>1},
+        args => {header_row=>1, separate_rows=>1},
         result => <<'_',
 .------+----.
 | A0   | B0 |
@@ -170,7 +170,7 @@ _
             [{text=>"AB2",colspan=>2},"C2"],
             ["A3","B3","C3"],
         ],
-        args => {header_row=>1, row_separator=>1},
+        args => {header_row=>1, separate_rows=>1},
         result => <<'_',
 .---------+----.
 | AB0     | C0 |
@@ -192,7 +192,7 @@ _
             ["C2"],
             ["A3","B3","C3"],
         ],
-        args => {header_row=>1, row_separator=>1},
+        args => {header_row=>1, separate_rows=>1},
         result => <<'_',
 .----+----+----.
 | A0 | B0 | C0 |
@@ -214,7 +214,7 @@ _
             ["A2", {text=>"BC23L1\nL2\nL3",rowspan=>2,colspan=>2}],
             ["A3"],
         ],
-        args => {header_row=>1, row_separator=>1},
+        args => {header_row=>1, separate_rows=>1},
         result => <<'_',
 .----+----+----.
 | A0 | B0 | C0 |

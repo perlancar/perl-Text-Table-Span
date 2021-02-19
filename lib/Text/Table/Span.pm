@@ -121,7 +121,7 @@ sub generate_table {
             my $exptable_colnum = firstidx {!defined} @{ $exptable->[$rownum] };
             #say "D:rownum=$rownum, exptable_colnum=$exptable_colnum";
             if ($exptable_colnum == -1) { $exptable_colnum = 0 }
-            $exptable_bottom_borders->[$rownum] //= $args{row_separator} ? 1:0;
+            $exptable_bottom_borders->[$rownum] //= $args{separate_rows} ? 1:0;
 
             for my $cell (@$row) {
                 $colnum++;
@@ -661,7 +661,7 @@ for the list of known attributes.
 Alternatively, you can specify a cell's attribute in the L</rows> argument
 directly, by specifying a cell as hashref.
 
-=item * row_separator
+=item * separate_rows
 
 Boolean. Optional. Default 0. If set to true, will add a separator between data
 rows. Equivalent to setting C<bottom_border> or C<top_border> attribute for each
