@@ -270,6 +270,44 @@ _
     },
 
     {
+        name => 'wide_char & color',
+        rows => [
+            [{text=>"⻅", align=>'middle'},"B0","C0"], # cell attrs (hash cell)
+            ["A1L1\nL2","B1","C1"],
+            ["A2", {text=>"\e[31mBC23L1\nL2⻅\nL3\e[0m",rowspan=>2,colspan=>2}],
+            ["A3"],
+        ],
+        args => {
+            align => 'right', # table arg
+            header_row=>1,
+            separate_rows=>1,
+            row_attrs => [
+                [1, {align=>'left'}], # row attrs
+            ],
+            col_attrs => [
+                [1, {align=>'left'}], # col attrs
+            ],
+            cell_attrs => [
+                [2, 0, {align=>'left'}], # cell attrs
+            ],
+            wide_char => 1,
+            color => 1,
+        },
+        result => <<"_",
+.------+----+----.
+|  ⻅  | B0 | C0 |
++======+====+====+
+| A1L1 | B1 | C1 |
+| \e[0mL2   |    |    |
++------+----+----+
+| A2   | \e[31mBC23L1\e[0m  |
++------+ \e[31mL2⻅\e[0m    |
+|   A3 | \e[31mL3\e[0m      |
+`------+---------'
+_
+    },
+
+    {
         name => 'valign',
         rows => [
             [{text=>"A0", valign=>'middle'},"B0L1\nL2\nL3","C0"], # cell attrs in cell (A0)
@@ -311,7 +349,7 @@ _
     },
 
 );
-my @include_tests;# = ("valign"); # e.g. ("1x1")
+my @include_tests = ("wide_char & color"); # e.g. ("1x1")
 my $border_style;# = "UTF8::SingleLineBoldHeader"; # force border style
 
 for my $test (@tests) {
@@ -325,6 +363,7 @@ for my $test (@tests) {
             ($border_style ? (border_style=>$border_style) : ()),
         );
         is($res, $test->{result}) or diag "expected:\n$test->{result}\nresult:\n$res";
+        #use DDC; is($res, $test->{result}) or diag "expected:\n".DDC::dump($test->{result})."\nresult:\n".DDC::dump($res);
     };
 }
 

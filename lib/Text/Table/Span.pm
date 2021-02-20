@@ -10,10 +10,13 @@ use strict;
 use warnings;
 
 use List::AllUtils qw(first firstidx max);
-use String::Pad qw(pad);
 
 use Exporter qw(import);
 our @EXPORT_OK = qw/ generate_table /;
+
+our $_split_lines_func;
+our $_pad_func;
+our $_length_height_func;
 
 # consts
 sub IDX_EXPTABLE_CELL_ROWSPAN()         {0} # number of rowspan, only defined for the rowspan head
@@ -146,8 +149,8 @@ sub _get_exptable_cell_lines {
         $height++ if $bottom_borders->[$y+$ir-2] && $ir > 1;
     }
 
-    my @datalines = map { pad($_, $width, $pad, ' ', 'truncate') }
-        (split /\R/, $text);
+    my @datalines = map { $_pad_func->($_, $width, $pad, ' ', 'truncate') }
+        ($_split_lines_func->($text));
     _vpad(\@datalines, $height, $width, $vpad);
 }
 
@@ -161,6 +164,43 @@ sub generate_table {
     my $cell_attrs = $args{cell_attrs} // [];
 
     my $bs_obj = Module::Load::Util::instantiate_class_with_optional_args({ns_prefix=>"BorderStyle"}, $bs_name);
+
+  DETERMINE_CODES: {
+        my $color = $args{color};
+        my $wide_char = $args{wide_char};
+
+        # split_lines
+        if ($color) {
+            require Text::ANSI::Util;
+            $_split_lines_func = sub { Text::ANSI::Util::ta_add_color_resets(split /\R/, $_[0]) };
+        } else {
+            $_split_lines_func = sub { split /\R/, $_[0] };
+        }
+
+        # pad & length_height
+        if ($color) {
+            if ($wide_char) {
+                require Text::ANSI::WideUtil;
+                $_pad_func           = \&Text::ANSI::WideUtil::ta_mbpad;
+                $_length_height_func = \&Text::ANSI::WideUtil::ta_mbswidth_height;
+            } else {
+                require Text::ANSI::Util;
+                $_pad_func           = \&Text::ANSI::Util::ta_pad;
+                $_length_height_func = \&Text::ANSI::Util::ta_length_height;
+            }
+        } else {
+            if ($wide_char) {
+                require Text::WideChar::Util;
+                $_pad_func           = \&Text::WideChar::Util::mbpad;
+                $_length_height_func = \&Text::WideChar::Util::mbswidth_height;
+            } else {
+                require String::Pad;
+                require Text::NonWideChar::Util;
+                $_pad_func           = \&String::Pad::pad;
+                $_length_height_func = \&Text::NonWideChar::Util::length_height;
+            }
+        }
+    }
 
     # XXX when we allow cell attrs right_border and left_border, this will
     # become array too like $exptable_bottom_borders.
@@ -262,7 +302,7 @@ sub generate_table {
                 my $colspan = $exptable_cell->[IDX_EXPTABLE_CELL_COLSPAN];
                 my $cell = $exptable_cell->[IDX_EXPTABLE_CELL_ORIG];
                 my $text = ref $cell eq 'HASH' ? $cell->{text} : $cell;
-                my $lh = Text::NonWideChar::Util::length_height($text);
+                my $lh = $_length_height_func->($text);
                 #use DDC; say "D:length_height[$exptable_rownum,$exptable_colnum] = (".DDC::dump($text)."): ".DDC::dump($lh);
                 my $tot_intercol_widths = ($colspan-1) * $intercol_width;
                 my $tot_interrow_heights = 0; for (1..$rowspan-1) { $tot_interrow_heights++ if $exptable_bottom_borders->[$exptable_rownum+$_-1] }
@@ -763,6 +803,18 @@ directly, by specifying a cell as hashref.
 Boolean. Optional. Default 0. If set to true, will add a separator between data
 rows. Equivalent to setting C<bottom_border> or C<top_border> attribute to true
 for each row.
+
+=item * wide_char
+
+Boolean. Optional. Default false. Turn on wide character support. Cells that
+contain wide Unicode characters will still be properly aligned. Note that this
+requires optional prereq L<Text::WideChar::Util> or L<Text::ANSI::WideUtil>.
+
+=item * color
+
+Boolean. Optional. Default false. Turn on color support. Cells that contain ANSI
+color codes will still be properly aligned. Note that this requires optional
+prereq L<Text::ANSI::Util> or L<Text::ANSI::WideUtil>.
 
 =back
 
