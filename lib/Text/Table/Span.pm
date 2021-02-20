@@ -544,7 +544,7 @@ sub generate_table {
 }
 
 1;
-# ABSTRACT: Text::Table::Tiny + support for column/row spans
+# ABSTRACT: (DEPRECATED) Text::Table::Tiny + support for column/row spans
 
 =encoding utf8
 
@@ -720,6 +720,9 @@ then the output will be something like this:
 
 
 =head1 DESCRIPTION
+
+B<DEPRECATION NOTICE:> This module has been renamed to L<Text::Table::More>.
+Please use the new name.
 
 This module is like L<Text::Table::Tiny> (0.04) with added support for
 column/row spans, and border style.

@@ -1,3 +1,9 @@
+0.009   2021-02-20  Released-By: PERLANCAR; Urgency: high
+
+        - Rename module from Text::Table::Span to Text::Table::More. The old
+          name is deprecated.
+
+
 0.008   2021-02-20  Released-By: PERLANCAR; Urgency: medium
 
 	- Add wide character and color support.
